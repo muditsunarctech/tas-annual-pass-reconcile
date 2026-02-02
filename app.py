@@ -375,7 +375,7 @@ def run_slicer(input_dir, temp_dir, progress_callback=None):
     from fastexcel import read_excel as fastexcel_read
     
     # Import configuration from slicer module
-    PLAZA_ID_HEADERS = {" Plaza ID", "Entry Plaza Code", "Entry Plaza Id", " Plaza Code", " Entry Plaza Code"}
+    PLAZA_ID_HEADERS = {"PLAZA_ID", " Plaza ID", "Entry Plaza Code", "Entry Plaza Id", " Plaza Code", " Entry Plaza Code"}
     ANNUAL_PASS_VALUES = {"ANNUALPASS", "ANNUAL PASS"}
     
     BANK_PLAZA_MAP = {
@@ -414,10 +414,10 @@ def run_slicer(input_dir, temp_dir, progress_callback=None):
             "TripType": ("Trip Type", "TRIPTYPEDISCRIPTION")
         },
         "IDFC": {
-            "TransactionDateTime": " Reader Read Time",
-            "VRN": " Vehicle Reg. No.",
-            "TagID": " Tag ID",
-            "TripType": " Journey Type"
+            "TransactionDateTime": ("READER_READ_TIME", " Reader Read Time"),
+            "VRN": ("VEHICLE_REG_NO", " Vehicle Reg. No."),
+            "TagID": ("TAG_ID", " Tag ID"),
+            "TripType": ("JOURNEY_TYPE", " Journey Type")
         }
     }
     
