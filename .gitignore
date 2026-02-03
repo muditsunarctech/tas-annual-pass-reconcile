@@ -1,1 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.env
 .venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Streamlit
+.streamlit/
+
+# Project specific
+.env
+*.xlsx
+*.csv
+# Keep sample data if needed, but ignore large data dumps
+!database_sample_data.csv
+!db_sample_data/
+temp_dir/
+RECONCILIATION_OUTPUT/
+reconciliation_db_results_*
+db_sample_data
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
