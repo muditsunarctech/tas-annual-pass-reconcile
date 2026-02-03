@@ -1,78 +1,125 @@
-# Annual Pass Reconciler - Technical Documentation
+# Annual Pass Reconciler
 
-## Overview
-The **Annual Pass Reconciler** (`annual_pass_reconciler.py`) is a production-ready Streamlit application that automates the reconciliation of toll plaza "ANNUALPASS" transactions. It connects directly to an Amazon Redshift database to fetch, process, and reconcile transaction data for IDFC and ICICI banks.
+A Streamlit-based application for reconciling FASTag Annual Pass transactions for IDFC and ICICI banks.
 
-## System Architecture
+## 🚀 Features
 
-```mermaid
-graph TD
-    User([User]) -->|Selects Bank/Plaza/Date| UI[Streamlit UI]
-    UI -->|Triggers Pipeline| Fetcher[Data Fetcher]
-    Fetcher -->|SQL Query| DB[(Amazon Redshift)]
-    DB -->|Raw Transactions| Fetcher
-    Fetcher -->|DataFrame| Consolidator[Data Consolidator]
-    Consolidator -->|Grouped Data| Reconciler[Reconciler]
-    Reconciler -->|Daily Logic| Reports[Reconciliation Reports]
-    Reports -->|ZIP Download| User
+- **Dual-Mode Operation**:
+  - **Database Mode**: Fetch transactions directly from Redshift warehouse.
+  - **File Upload Mode**: Process Excel/CSV files manually.
+- **Automated Reconciliation**:
+  - Calculates `TripCount` within 24-hour rolling windows.
+  - Determines Report Date (logical day cutoff at 8:00 AM).
+  - Identifies ATP (Annual Pass) vs. NAP (Non-Annual Pass) transactions.
+- **Result Persistence (New!)**:
+  - Stores reconciliation runs and results in MySQL.
+  - View historical reports and trends.
+  - Download past results as CSV/ZIP.
+- **Premium UI**:
+  - Modern, responsive interface.
+  - Real-time progress tracking and logs.
+
+## 🛠️ Architecture
+
+The application follows a modular **MVC (Model-View-Controller)** pattern:
+
+- **`models/`**: Data access and business logic (Database, File Processing, Reconciliation Engine).
+- **`views/`**: UI components and styling.
+- **`controllers/`**: Application orchestration and logic flow.
+- **`config/`**: Configuration for databases and plazas.
+
+## 📋 Prerequisites
+
+- Python 3.8+
+- MySQL Server (for result storage)
+- Access to Redshift (for database mode)
+
+## 🔧 Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd AnnualPassReconcile
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Configure Environment**:
+   Create a `.env` file in the root directory:
+   ```ini
+   # Redshift Credentials
+   DB_HOST=redshift-cluster.example.com
+   DB_PORT=5439
+   DB_USER=your_user
+   DB_PASSWORD=your_password
+   DB_NAME=dev
+   
+   # MySQL Credentials (Result Storage)
+   MYSQL_HOST=localhost
+   MYSQL_PORT=3306
+   MYSQL_DATABASE=annual_pass_reconciler
+   MYSQL_USER=your_mysql_user
+   MYSQL_PASSWORD=your_mysql_password
+   ```
+
+4. **Initialize MySQL Database**:
+   Run the schema script to create the necessary tables:
+   ```bash
+   mysql -u root -p < config/mysql_schema.sql
+   ```
+
+## ▶️ Usage
+
+Start the application:
+```bash
+streamlit run app.py
 ```
 
-## Core Components
+### Running a Reconciliation
+1. Select **"🚀 Run Pipeline"** from the sidebar.
+2. Choose your **Data Source**:
+   - **Database**: Select Bank, Project, Plaza(s), and Date Range.
+   - **File Upload**: Upload your transaction files (Excel/CSV).
+3. Click **▶️ Start Reconciliation**.
+4. Monitor the live logs and progress.
+5. Once complete, view the summary or download the full results.
 
-### 1. Database Connectivity ([db_config.py](file:///home/muditubuntu/Desktop/SunArc/Streamlit/AnnualPassReconcile/db_config.py))
-Handles all database interactions using `redshift-connector` or `psycopg2`.
-- **Connection**: Managed via environment variables (`REDSHIFT_HOST`, `REDSHIFT_USER`, etc.) defined in `.env`.
-- **Query Building**: Dynamically constructs SQL queries based on bank type, selected plazas, and date range.
-- **Deduplication Strategy**: Uses `ROW_NUMBER() OVER (PARTITION BY unique_id ORDER BY batch DESC)` to eliminate duplicate records caused by multiple batch loads.
+### Viewing History
+1. Select **"📊 View History"** from the sidebar.
+2. Filter past runs by Bank or Project.
+3. Select a run to view detailed stats and download archived results.
 
-### 2. Main Application (`annual_pass_reconciler.py`)
-The central orchestration layer built with Streamlit.
-- **UI Layer**: Provides bank selection, project filtering, and date picking.
-- **Pipeline Execution**:
-  1.  **Fetch**: Retries transaction data filtered by `ANNUALPASS`.
-  2.  **Consolidate**: Normalizes data from different banks (IDFC/ICICI) into a standard schema.
-  3.  **Reconcile**: Applies business logic to determine ATP (Annual Pass) vs NAP (Non-Annual Pass) eligibility.
+## 📁 Project Structure
 
-### 3. Business Logic (Reconciler)
-- **Trip Count**: Group transactions by vehicle (VRN) and calculate trips within a 24-hour cycle.
-- **Report Date Rule**: Transactions occurring before 08:00 AM are attributed to the previous calendar day.
-- **Qualifying Logic**: A vehicle is a "Qualified NAP" if `TripCount <= 2`.
+```
+AnnualPassReconcile/
+├── app.py                  # Main entry point
+├── models/                 # Data & Logic
+│   ├── database.py         # Redshift interactions
+│   ├── result_storage.py   # MySQL interactions
+│   ├── reconciliation.py   # Core logic
+│   └── file_processor.py   # File handling
+├── views/                  # UI
+│   ├── ui_components.py    # Reusable widgets
+│   └── styles.py           # CSS styling
+├── controllers/            # orchestration
+│   ├── reconciler_controller.py
+│   ├── data_fetcher.py
+│   └── data_consolidator.py
+├── config/                 # Configuration
+│   ├── db_config.py        # SQL queries
+│   ├── plaza_config.py     # Mappings
+│   └── mysql_schema.sql    # DDL
+└── archive/                # Legacy files
+```
 
-## Database Schema Mapping
+## 🤝 Contributing
 
-| Field | IDFC Column (`ods_fastag.idfc_transaction_api`) | ICICI Column (`ods_fastag.acquirer_transaction_information`) | Internal App Name |
-|-------|-------------------------------------------------|--------------------------------------------------------------|-------------------|
-| Plaza ID | `conc_plaza_id` | `ihmclplazacode` | `PlazaID` |
-| Vehicle Reg | `conc_vrn_no` | `vrn` | `Vehicle Reg. No.` |
-| Tag ID | `conc_tag_id` | `tagid` | `Tag ID` |
-| Timestamp | `conc_txn_dt_processed` | `acqtxndateprocessed` | `Reader Read Time` |
-| Reason Code | `acq_txn_reason` | `acqtxnreason` | `ReasonCode` |
-| Unique ID | `conc_txn_id` | `conctxnid` | *(Used for deduplication)* |
-
-## Installation & Setup
-
-### Prerequisites
-- Python 3.8+
-- Amazon Redshift credentials
-
-### Setup Steps
-1.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-2.  **Configure Environment**:
-    Create `.env` file with your credentials:
-    ```ini
-    REDSHIFT_HOST=...
-    REDSHIFT_DB=...
-    ...
-    ```
-3.  **Run Application**:
-    ```bash
-    streamlit run annual_pass_reconciler.py
-    ```
-
-## Maintenance & Troubleshooting
-- **Missing Data**: Verify the date range and checking if data has been loaded into Redshift for those dates.
-- **Connection Errors**: Check `.env` credentials and VPN/Network connectivity to AWS.
-- **Duplicate Data**: The application automatically handles duplicates. If counts mismatch, verify the `batch` column logic in [db_config.py](file:///home/muditubuntu/Desktop/SunArc/Streamlit/AnnualPassReconcile/db_config.py).
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
