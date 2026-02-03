@@ -14,13 +14,28 @@ load_dotenv()
 # REDSHIFT CONNECTION CONFIGURATION
 # ============================================================================
 
-REDSHIFT_CONFIG = {
-    "host": os.getenv("REDSHIFT_HOST", "").strip().rstrip(",").strip('"'),
-    "port": int(os.getenv("REDSHIFT_PORT", "5439").strip().rstrip(",").strip('"')),
-    "database": os.getenv("REDSHIFT_DATABASE", "").strip().rstrip(",").strip('"'),
-    "user": os.getenv("REDSHIFT_USER", "").strip().rstrip(",").strip('"'),
-    "password": os.getenv("REDSHIFT_PASSWORD", "").strip().rstrip(",").strip('"'),
-}
+
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
+def get_db_config():
+    """Get database configuration from Streamlit secrets or environment variables."""
+    # Check for Streamlit secrets first
+    if st is not None and hasattr(st, "secrets") and "redshift" in st.secrets:
+        return st.secrets["redshift"]
+    
+    # Fallback to environment variables
+    return {
+        "host": os.getenv("REDSHIFT_HOST", "").strip().rstrip(",").strip('"'),
+        "port": int(os.getenv("REDSHIFT_PORT", "5439").strip().rstrip(",").strip('"')),
+        "database": os.getenv("REDSHIFT_DATABASE", "").strip().rstrip(",").strip('"'),
+        "user": os.getenv("REDSHIFT_USER", "").strip().rstrip(",").strip('"'),
+        "password": os.getenv("REDSHIFT_PASSWORD", "").strip().rstrip(",").strip('"'),
+    }
+
+REDSHIFT_CONFIG = get_db_config()
 
 
 
