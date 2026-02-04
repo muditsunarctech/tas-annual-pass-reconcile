@@ -1,78 +1,59 @@
-# Annual Pass Reconciler - Technical Documentation
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
-## Overview
-The **Annual Pass Reconciler** (`annual_pass_reconciler.py`) is a production-ready Streamlit application that automates the reconciliation of toll plaza "ANNUALPASS" transactions. It connects directly to an Amazon Redshift database to fetch, process, and reconcile transaction data for IDFC and ICICI banks.
+<p align="center">
+<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+</p>
 
-## System Architecture
+## About Laravel
 
-```mermaid
-graph TD
-    User([User]) -->|Selects Bank/Plaza/Date| UI[Streamlit UI]
-    UI -->|Triggers Pipeline| Fetcher[Data Fetcher]
-    Fetcher -->|SQL Query| DB[(Amazon Redshift)]
-    DB -->|Raw Transactions| Fetcher
-    Fetcher -->|DataFrame| Consolidator[Data Consolidator]
-    Consolidator -->|Grouped Data| Reconciler[Reconciler]
-    Reconciler -->|Daily Logic| Reports[Reconciliation Reports]
-    Reports -->|ZIP Download| User
-```
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
-## Core Components
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
-### 1. Database Connectivity ([db_config.py](file:///home/muditubuntu/Desktop/SunArc/Streamlit/AnnualPassReconcile/db_config.py))
-Handles all database interactions using `redshift-connector` or `psycopg2`.
-- **Connection**: Managed via environment variables (`REDSHIFT_HOST`, `REDSHIFT_USER`, etc.) defined in `.env`.
-- **Query Building**: Dynamically constructs SQL queries based on bank type, selected plazas, and date range.
-- **Deduplication Strategy**: Uses `ROW_NUMBER() OVER (PARTITION BY unique_id ORDER BY batch DESC)` to eliminate duplicate records caused by multiple batch loads.
+Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
-### 2. Main Application (`annual_pass_reconciler.py`)
-The central orchestration layer built with Streamlit.
-- **UI Layer**: Provides bank selection, project filtering, and date picking.
-- **Pipeline Execution**:
-  1.  **Fetch**: Retries transaction data filtered by `ANNUALPASS`.
-  2.  **Consolidate**: Normalizes data from different banks (IDFC/ICICI) into a standard schema.
-  3.  **Reconcile**: Applies business logic to determine ATP (Annual Pass) vs NAP (Non-Annual Pass) eligibility.
+## Learning Laravel
 
-### 3. Business Logic (Reconciler)
-- **Trip Count**: Group transactions by vehicle (VRN) and calculate trips within a 24-hour cycle.
-- **Report Date Rule**: Transactions occurring before 08:00 AM are attributed to the previous calendar day.
-- **Qualifying Logic**: A vehicle is a "Qualified NAP" if `TripCount <= 2`.
+Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
 
-## Database Schema Mapping
+If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
 
-| Field | IDFC Column (`ods_fastag.idfc_transaction_api`) | ICICI Column (`ods_fastag.acquirer_transaction_information`) | Internal App Name |
-|-------|-------------------------------------------------|--------------------------------------------------------------|-------------------|
-| Plaza ID | `conc_plaza_id` | `ihmclplazacode` | `PlazaID` |
-| Vehicle Reg | `conc_vrn_no` | `vrn` | `Vehicle Reg. No.` |
-| Tag ID | `conc_tag_id` | `tagid` | `Tag ID` |
-| Timestamp | `conc_txn_dt_processed` | `acqtxndateprocessed` | `Reader Read Time` |
-| Reason Code | `acq_txn_reason` | `acqtxnreason` | `ReasonCode` |
-| Unique ID | `conc_txn_id` | `conctxnid` | *(Used for deduplication)* |
+## Laravel Sponsors
 
-## Installation & Setup
+We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
 
-### Prerequisites
-- Python 3.8+
-- Amazon Redshift credentials
+### Premium Partners
 
-### Setup Steps
-1.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-2.  **Configure Environment**:
-    Create `.env` file with your credentials:
-    ```ini
-    REDSHIFT_HOST=...
-    REDSHIFT_DB=...
-    ...
-    ```
-3.  **Run Application**:
-    ```bash
-    streamlit run annual_pass_reconciler.py
-    ```
+- **[Vehikl](https://vehikl.com)**
+- **[Tighten Co.](https://tighten.co)**
+- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
+- **[64 Robots](https://64robots.com)**
+- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
+- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
+- **[Redberry](https://redberry.international/laravel-development)**
+- **[Active Logic](https://activelogic.com)**
 
-## Maintenance & Troubleshooting
-- **Missing Data**: Verify the date range and checking if data has been loaded into Redshift for those dates.
-- **Connection Errors**: Check `.env` credentials and VPN/Network connectivity to AWS.
-- **Duplicate Data**: The application automatically handles duplicates. If counts mismatch, verify the `batch` column logic in [db_config.py](file:///home/muditubuntu/Desktop/SunArc/Streamlit/AnnualPassReconcile/db_config.py).
+## Contributing
+
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+
+## Code of Conduct
+
+In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+
+## Security Vulnerabilities
+
+If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+
+## License
+
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
