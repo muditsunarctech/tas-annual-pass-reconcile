@@ -135,7 +135,7 @@ class AnnualPassReconciliationController extends Controller
 
         return Storage::download(
             $resultPath,
-            "reconciliation_results_{$batchId}.zip"
+            "reconciliation_results_{$batchId}.xlsx"
         );
     }
 
