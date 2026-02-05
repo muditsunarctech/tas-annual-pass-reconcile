@@ -41,33 +41,41 @@ class ReconciliationService
         $finalSummary = [];
         $finalDetails = [];
 
-        foreach ($grouped as $project => $plazas) {
-            foreach ($plazas as $plazaId => $txns) {
+        $projectResults = [];
 
-                usort($txns, fn ($a, $b) => [$a['vrn'], $a['ts']] <=> [$b['vrn'], $b['ts']]
-                );
+        foreach ($grouped as $project => $plazas) {
+            $projectSummary = [];
+            $projectDetails = [];
+
+            foreach ($plazas as $plazaId => $txns) {
+                // Sorting per plaza/vrn/ts match Python's pdf.sort_values
+                usort($txns, fn ($a, $b) => [$a['vrn'], $a['ts']] <=> [$b['vrn'], $b['ts']]);
 
                 $processed = $this->applySlidingWindow($txns);
+                $summary = $this->aggregateResults($project, $plazaId, $processed);
 
-                $finalSummary = array_merge(
-                    $finalSummary,
-                    $this->aggregateResults($project, $plazaId, $processed)
-                );
+                $projectSummary = array_merge($projectSummary, $summary);
 
                 foreach ($processed as $row) {
-                    // Enrich row_data with Bank / PlazaName / ProjectName for export
                     $detail = $row['row_data'];
                     [$bank, $plazaName, $projectName] = $this->resolvePlaza($detail['PlazaID'] ?? $plazaId);
                     $detail['Bank'] = $bank ?? $row['bank'] ?? null;
                     $detail['PlazaName'] = $plazaName;
                     $detail['ProjectName'] = $projectName ?? $project;
-
-                    $finalDetails[] = $detail;
+                    $projectDetails[] = $detail;
                 }
             }
+
+            $projectResults[$project] = [
+                'summary' => $projectSummary,
+                'details' => $projectDetails,
+            ];
+
+            $finalSummary = array_merge($finalSummary, $projectSummary);
+            $finalDetails = array_merge($finalDetails, $projectDetails);
         }
 
-        $file = $this->writeExcel($finalSummary, $finalDetails, $outputDir);
+        $file = $this->writeOutput($finalSummary, $finalDetails, $projectResults, $outputDir);
 
         return [
             'file' => $file,
@@ -247,10 +255,15 @@ class ReconciliationService
         $row['TransactionDateTime'] = date('Y-m-d H:i:s', $ts);
         $row['PlazaID'] = $plazaId;
 
+        // Standardize output cleaning (match Python's standardize_output)
+        $cleanVrn = strtoupper(preg_replace('/\s+/', ' ', trim((string)($row['VRN'] ?? ''))));
+        $cleanTagId = strtoupper(preg_replace('/\s+/', ' ', trim((string)($row['TagID'] ?? ''))));
+        $cleanPlazaId = trim(trim((string)($row['PlazaID'] ?? $plazaId)), "'\"");
+
         return [
-            'vrn' => $row['VRN'],
+            'vrn' => $cleanVrn,
             'ts' => $ts,
-            'row_data' => $row,
+            'row_data' => $row + ['VRN' => $cleanVrn, 'TagID' => $cleanTagId, 'PlazaID' => $cleanPlazaId],
             'project' => $project,
             'bank' => $bank,
         ];
@@ -335,7 +348,7 @@ class ReconciliationService
         return $summary;
     }
 
-    protected function writeExcel(array $summary, array $details, string $outputDir): string
+    protected function writeOutput(array $finalSummary, array $finalDetails, array $projectResults, string $outputDir): string
     {
         $file = "{$outputDir}/reconciliation_results_{$this->batchId}.xlsx";
         $abs = Storage::disk('local')->path($file);
@@ -347,102 +360,81 @@ class ReconciliationService
         $writer = new XLSXWriter;
         $writer->openToFile($abs);
 
-        if ($summary) {
+        if ($finalSummary) {
             $writer->getCurrentSheet()->setName('Summary');
-            $writer->addRow(Row::fromValues(array_keys($summary[0])));
-            foreach ($summary as $row) {
+            $writer->addRow(Row::fromValues(array_keys($finalSummary[0])));
+            foreach ($finalSummary as $row) {
                 $writer->addRow(Row::fromValues(array_values($row)));
             }
         }
 
-        if ($details) {
+        if ($finalDetails) {
             $writer->addNewSheetAndMakeItCurrent();
             $writer->getCurrentSheet()->setName('Details');
-            $writer->addRow(Row::fromValues(array_keys($details[0])));
-            foreach ($details as $row) {
+            $writer->addRow(Row::fromValues(array_keys($finalDetails[0])));
+            foreach ($finalDetails as $row) {
                 $writer->addRow(Row::fromValues(array_values($row)));
             }
         }
 
         $writer->close();
 
-        // Also emit CSV outputs alongside the XLSX for downstream consumption.
-        try {
-            // Summary CSV
-            if (! empty($summary)) {
-                $csvName1 = 'IHPL_daily_ATP_NAP_plaza.csv';
-                $csvPath1 = $outputDir.'/'.$csvName1;
-                $absCsv1 = Storage::disk('local')->path($csvPath1);
-                $dir1 = dirname($absCsv1);
-                if (! is_dir($dir1)) {
-                    mkdir($dir1, 0777, true);
+        // Emit project-specific CSV outputs in subdirectories
+        foreach ($projectResults as $project => $data) {
+            try {
+                $projectOutDir = $outputDir . '/' . $project;
+                $absProjectDir = Storage::disk('local')->path($projectOutDir);
+                if (!is_dir($absProjectDir)) {
+                    mkdir($absProjectDir, 0777, true);
                 }
-                $h1 = fopen($absCsv1, 'w');
-                // Fixed header order to match reference CSV
-                $headers = ['ProjectName', 'PlazaID', 'PlazaName', 'ReportDate', 'ATP', 'NAP'];
-                fputcsv($h1, $headers);
-                foreach ($summary as $row) {
-                    $line = [
-                        $row['ProjectName'] ?? '',
-                        $row['PlazaID'] ?? '',
-                        $row['PlazaName'] ?? '',
-                        $row['ReportDate'] ?? '',
-                        $row['ATP'] ?? 0,
-                        $row['NAP'] ?? 0,
-                    ];
-                    fputcsv($h1, $line);
-                }
-                fclose($h1);
-            }
 
-            // Details CSV (transactions with TripCount)
-            if (! empty($details)) {
-                $csvName2 = 'IHPL_transactions_with_tripcount.csv';
-                $csvPath2 = $outputDir.'/'.$csvName2;
-                $absCsv2 = Storage::disk('local')->path($csvPath2);
-                $dir2 = dirname($absCsv2);
-                if (! is_dir($dir2)) {
-                    mkdir($dir2, 0777, true);
+                // Summary CSV
+                if (!empty($data['summary'])) {
+                    $csvName1 = "{$project}_daily_ATP_NAP_plaza.csv";
+                    $h1 = fopen($absProjectDir . '/' . $csvName1, 'w');
+                    fputcsv($h1, ['ProjectName', 'PlazaID', 'PlazaName', 'ReportDate', 'ATP', 'NAP'], ",", "\"", "");
+                    foreach ($data['summary'] as $row) {
+                        fputcsv($h1, [
+                            $row['ProjectName'] ?? '',
+                            $row['PlazaID'] ?? '',
+                            $row['PlazaName'] ?? '',
+                            $row['ReportDate'] ?? '',
+                            $row['ATP'] ?? 0,
+                            $row['NAP'] ?? 0,
+                        ], ",", "\"", "");
+                    }
+                    fclose($h1);
                 }
-                $h2 = fopen($absCsv2, 'w');
-                // Match reference detail CSV:
-                // Reader Read Time,Vehicle Reg. No.,Tag ID,PlazaID,TripType,Bank,PlazaName,ProjectName,TripCount,ReportDate,IsQualifiedNAP
-                $headers2 = [
-                    'Reader Read Time',
-                    'Vehicle Reg. No.',
-                    'Tag ID',
-                    'PlazaID',
-                    'TripType',
-                    'Bank',
-                    'PlazaName',
-                    'ProjectName',
-                    'TripCount',
-                    'ReportDate',
-                    'IsQualifiedNAP',
-                ];
-                fputcsv($h2, $headers2);
-                foreach ($details as $row) {
-                    $line = [
-                        $row['TransactionDateTime'] ?? '',
-                        $row['VRN'] ?? '',
-                        $row['TagID'] ?? '',
-                        $row['PlazaID'] ?? '',
-                        $row['TripType'] ?? '',
-                        $row['Bank'] ?? '',
-                        $row['PlazaName'] ?? '',
-                        $row['ProjectName'] ?? '',
-                        $row['TripCount'] ?? 0,
-                        $row['ReportDate'] ?? '',
-                        // Convert 1/0 (or truthy) to 'True' / 'False' like Streamlit output
-                        ! empty($row['IsQualifiedNAP']) ? 'True' : 'False',
-                    ];
-                    fputcsv($h2, $line);
+
+                // Details CSV
+                if (!empty($data['details'])) {
+                    $csvName2 = "{$project}_transactions_with_tripcount.csv";
+                    $h2 = fopen($absProjectDir . '/' . $csvName2, 'w');
+                    fputcsv($h2, [
+                        'Reader Read Time', 'Vehicle Reg. No.', 'Tag ID', 'PlazaID',
+                        'TripType', 'Bank', 'PlazaName', 'ProjectName',
+                        'TripCount', 'ReportDate', 'IsQualifiedNAP'
+                    ], ",", "\"", "");
+                    foreach ($data['details'] as $row) {
+                        fputcsv($h2, [
+                            $row['TransactionDateTime'] ?? '',
+                            $row['VRN'] ?? '',
+                            $row['TagID'] ?? '',
+                            $row['PlazaID'] ?? '',
+                            $row['TripType'] ?? '',
+                            $row['Bank'] ?? '',
+                            $row['PlazaName'] ?? '',
+                            $row['ProjectName'] ?? '',
+                            $row['TripCount'] ?? 0,
+                            $row['ReportDate'] ?? '',
+                            !empty($row['IsQualifiedNAP']) ? 'True' : 'False',
+                        ], ",", "\"", "");
+                    }
+                    fclose($h2);
                 }
-                fclose($h2);
+            } catch (\Exception $e) {
+                Log::warning("Failed to write CSV outputs for project {$project}: " . $e->getMessage());
             }
-        } catch (\Exception $e) {
-            // Log but don't fail the entire operation
-            Log::warning('Failed to write CSV outputs: '.$e->getMessage());
         }
 
         return $file;

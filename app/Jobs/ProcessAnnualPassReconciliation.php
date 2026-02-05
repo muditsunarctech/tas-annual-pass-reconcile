@@ -120,12 +120,6 @@ class ProcessAnnualPassReconciliation implements ShouldQueue
 
         $zip = new ZipArchive;
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
-            // Add the XLSX if present
-            $absXlsxPath = Storage::disk('local')->path($xlsxRelativePath);
-            if (file_exists($absXlsxPath)) {
-                $zip->addFile($absXlsxPath, basename($absXlsxPath));
-            }
-
             // Add any CSVs from the OUTPUT directory
             $outputLocalDir = Storage::disk('local')->path($this->outputDir);
             if (is_dir($outputLocalDir)) {
